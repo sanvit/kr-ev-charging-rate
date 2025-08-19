@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>전기차 충전 요금 계산기</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Apply Noto Sans KR as the primary font */
+      body {
+        font-family: "Noto Sans KR", "Inter", sans-serif;
+      }
+      /* Simple scrollbar styling */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #555;
+      }
+      /* Custom class for hiding elements */
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50 text-gray-800">
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+      <header class="text-center mb-8">
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-900">
+          전기차 최저 충전 요금 계산기
+        </h1>
+        <p class="text-gray-600 mt-2">
+          보유하신 멤버십 카드를 선택하고 충전기와 충전 속도를 입력하여 가장
+          저렴한 요금을 찾아보세요.
+        </p>
+      </header>
+
+      <main class="bg-white p-6 md:p-8 rounded-2xl shadow-lg space-y-8">
+        <!-- Loading State -->
+        <div id="loader" class="text-center text-gray-500">
+          <p>요금 데이터를 불러오는 중입니다...</p>
+        </div>
+
+        <!-- Main Content - Hidden until data is loaded -->
+        <div id="main-content" class="hidden">
+          <!-- Section 1: Membership Selection -->
+          <section>
+            <h2 class="text-xl font-semibold mb-4">1. 보유 멤버십 선택</h2>
+            <div class="flex items-center mb-4 border-b pb-4">
+              <input
+                type="checkbox"
+                id="select-all-memberships"
+                class="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <label
+                for="select-all-memberships"
+                class="ml-3 block text-md font-medium text-gray-700"
+                >전체 선택</label
+              >
+            </div>
+            <div
+              id="memberships-container"
+              class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"
+            >
+              <!-- Membership checkboxes will be dynamically inserted here -->
+            </div>
+          </section>
+
+          <!-- Section 2: Charging Provider and Speed -->
+          <section>
+            <h2 class="text-xl font-semibold mb-4">2. 충전 정보 입력</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- Searchable Dropdown for Charging Provider -->
+              <div class="relative">
+                <label
+                  for="provider-search"
+                  class="block text-md font-medium text-gray-700 mb-1"
+                  >충전 사업자</label
+                >
+                <input
+                  type="text"
+                  id="provider-search"
+                  placeholder="충전 사업자 검색..."
+                  class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                />
+                <div
+                  id="provider-dropdown"
+                  class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto hidden"
+                >
+                  <!-- Provider options will be dynamically inserted here -->
+                </div>
+                <input type="hidden" id="selected-provider" />
+              </div>
+              <!-- Charging Speed Input -->
+              <div>
+                <label
+                  for="charging-speed"
+                  class="block text-md font-medium text-gray-700 mb-1"
+                  >충전 속도 (kW)</label
+                >
+                <input
+                  type="number"
+                  id="charging-speed"
+                  placeholder="예: 50"
+                  class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+            </div>
+          </section>
+
+          <!-- Section 3: Options -->
+          <section>
+            <h2 class="text-xl font-semibold mb-4">3. 추가 옵션</h2>
+            <div class="flex items-center">
+              <input
+                type="checkbox"
+                id="ignore-zero"
+                class="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <label
+                for="ignore-zero"
+                class="ml-3 block text-md font-medium text-gray-700"
+                >0원 요금 제외</label
+              >
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <!-- Result Section -->
+      <section
+        id="result-section"
+        class="mt-8 bg-white p-6 md:p-8 rounded-2xl shadow-lg hidden"
+      >
+        <h2 class="text-2xl font-bold text-center mb-4">계산 결과</h2>
+        <div id="result" class="text-center p-6 rounded-lg bg-indigo-50">
+          <p class="text-lg text-gray-600">
+            입력값을 변경하여 최저 요금을 확인하세요.
+          </p>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      // Data URL
+      const DATA_URL = "/charging_rates.json";
+      let chargingData = {};
+      let allProviders = new Set();
+
+      // DOM Elements
+      const loader = document.getElementById("loader");
+      const mainContent = document.getElementById("main-content");
+      const resultSection = document.getElementById("result-section");
+      const membershipsContainer = document.getElementById(
+        "memberships-container"
+      );
+      const selectAllCheckbox = document.getElementById(
+        "select-all-memberships"
+      );
+      const providerSearchInput = document.getElementById("provider-search");
+      const providerDropdown = document.getElementById("provider-dropdown");
+      const selectedProviderInput =
+        document.getElementById("selected-provider");
+      const chargingSpeedInput = document.getElementById("charging-speed");
+      const ignoreZeroCheckbox = document.getElementById("ignore-zero");
+      const resultDiv = document.getElementById("result");
+
+      /**
+       * Fetches and processes the charging data from the URL.
+       */
+      async function loadData() {
+        try {
+          const response = await fetch(DATA_URL);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          chargingData = await response.json();
+
+          // Populate UI elements after data is loaded
+          populateMemberships();
+          populateProviders();
+
+          // Show main content and hide loader
+          loader.classList.add("hidden");
+          mainContent.classList.remove("hidden");
+          resultSection.classList.remove("hidden");
+        } catch (error) {
+          loader.textContent =
+            "데이터를 불러오는 데 실패했습니다. 페이지를 새로고침 해주세요.";
+          console.error("Failed to load charging data:", error);
+        }
+      }
+
+      /**
+       * Populates membership checkboxes based on the loaded data.
+       */
+      function populateMemberships() {
+        const membershipNames = Object.keys(chargingData).sort();
+        membershipsContainer.innerHTML = ""; // Clear existing content
+        membershipNames.forEach((name) => {
+          const div = document.createElement("div");
+          div.className = "flex items-center";
+          div.innerHTML = `
+                    <input type="checkbox" id="mem-${name}" name="membership" value="${name}" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                    <label for="mem-${name}" class="ml-2 text-sm text-gray-600">${name}</label>
+                `;
+          membershipsContainer.appendChild(div);
+        });
+      }
+
+      /**
+       * Extracts all unique provider names and populates the dropdown.
+       */
+      function populateProviders() {
+        allProviders.clear();
+        Object.values(chargingData).forEach((memberProviders) => {
+          Object.keys(memberProviders).forEach((provider) =>
+            allProviders.add(provider)
+          );
+        });
+
+        const sortedProviders = Array.from(allProviders).sort();
+        renderProviderDropdown(sortedProviders);
+      }
+
+      /**
+       * Renders the provider options in the dropdown.
+       * @param {string[]} providers - An array of provider names to display.
+       */
+      function renderProviderDropdown(providers) {
+        providerDropdown.innerHTML = ""; // Clear existing options
+        if (providers.length === 0) {
+          providerDropdown.innerHTML = `<div class="p-3 text-gray-500">검색 결과가 없습니다.</div>`;
+          return;
+        }
+        providers.forEach((provider) => {
+          const optionDiv = document.createElement("div");
+          optionDiv.textContent = provider;
+          optionDiv.className = "p-3 hover:bg-indigo-100 cursor-pointer";
+          optionDiv.addEventListener("mousedown", (e) => {
+            // Use mousedown to ensure it fires before the input's blur event
+            e.preventDefault(); // Prevent input from losing focus immediately
+            providerSearchInput.value = provider;
+            selectedProviderInput.value = provider;
+            providerDropdown.classList.add("hidden");
+            calculateCheapest();
+          });
+          providerDropdown.appendChild(optionDiv);
+        });
+      }
+
+      /**
+       * The core function to calculate the cheapest rate based on user inputs.
+       */
+      function calculateCheapest() {
+        // 1. Get all selected memberships
+        const selectedMemberships = Array.from(
+          document.querySelectorAll('input[name="membership"]:checked')
+        ).map((cb) => cb.value);
+
+        // 2. Get the selected charging provider and speed
+        const provider = selectedProviderInput.value;
+        const speed = parseFloat(chargingSpeedInput.value);
+        const ignoreZero = ignoreZeroCheckbox.checked;
+
+        // 3. Validate inputs
+        if (selectedMemberships.length === 0) {
+          resultDiv.innerHTML = `<p class="text-lg text-gray-600">하나 이상의 멤버십을 선택해주세요.</p>`;
+          return;
+        }
+        if (!provider) {
+          resultDiv.innerHTML = `<p class="text-lg text-gray-600">충전 사업자를 선택해주세요.</p>`;
+          return;
+        }
+        if (isNaN(speed) || speed <= 0) {
+          resultDiv.innerHTML = `<p class="text-lg text-gray-600">유효한 충전 속도를 입력해주세요.</p>`;
+          return;
+        }
+
+        // 4. Find the cheapest price and all providers with that price
+        let cheapestPrice = Infinity;
+        let cheapestProviders = [];
+
+        selectedMemberships.forEach((membership) => {
+          const providerRates = chargingData[membership]?.[provider];
+          if (providerRates) {
+            for (const rate of providerRates) {
+              if (speed >= rate.min_kW && speed <= rate.max_kW) {
+                // If 'ignore zero' is checked and price is 0, skip it
+                if (ignoreZero && rate.price === 0) {
+                  continue;
+                }
+
+                if (rate.price < cheapestPrice) {
+                  // New cheapest price found, reset the list
+                  cheapestPrice = rate.price;
+                  cheapestProviders = [membership];
+                } else if (
+                  rate.price === cheapestPrice &&
+                  !cheapestProviders.includes(membership)
+                ) {
+                  // Same cheapest price found, add to the list
+                  cheapestProviders.push(membership);
+                }
+                // Found the correct tier, no need to check other tiers for this membership
+                break;
+              }
+            }
+          }
+        });
+
+        // 5. Display the result
+        if (cheapestProviders.length === 0) {
+          resultDiv.innerHTML = `<p class="text-lg font-semibold text-red-600">해당 조건에 맞는 요금 정보를 찾을 수 없습니다.</p><p class="text-sm text-gray-500 mt-1">다른 충전 사업자나 속도를 시도해보세요.</p>`;
+        } else {
+          const providerList = cheapestProviders.join(", ");
+          const label =
+            cheapestProviders.length > 1
+              ? "가장 저렴한 멤버십"
+              : "가장 저렴한 멤버십";
+          resultDiv.innerHTML = `
+                    <p class="text-gray-600 mb-1">${label}</p>
+                    <p class="text-3xl font-bold text-indigo-600">${providerList}</p>
+                    <p class="text-4xl font-bold text-gray-900 mt-4">${cheapestPrice.toLocaleString()} <span class="text-2xl font-medium text-gray-500">원/kWh</span></p>
+                `;
+        }
+      }
+
+      // --- Event Listeners ---
+
+      // Load data when the script runs
+      document.addEventListener("DOMContentLoaded", loadData);
+
+      // Select/Deselect all memberships
+      selectAllCheckbox.addEventListener("change", (e) => {
+        document
+          .querySelectorAll('input[name="membership"]')
+          .forEach((checkbox) => {
+            checkbox.checked = e.target.checked;
+          });
+        calculateCheapest();
+      });
+
+      // Handle clicks on individual membership checkboxes
+      membershipsContainer.addEventListener("change", (e) => {
+        if (e.target.name === "membership") {
+          // Uncheck "Select All" if any individual box is unchecked
+          if (!e.target.checked) {
+            selectAllCheckbox.checked = false;
+          }
+          calculateCheapest();
+        }
+      });
+
+      // --- Searchable dropdown logic ---
+
+      // Show dropdown on focus
+      providerSearchInput.addEventListener("focus", () => {
+        renderProviderDropdown(Array.from(allProviders).sort());
+        providerDropdown.classList.remove("hidden");
+      });
+
+      // Filter dropdown on input
+      providerSearchInput.addEventListener("input", () => {
+        const searchTerm = providerSearchInput.value.toLowerCase();
+        const filteredProviders = Array.from(allProviders)
+          .filter((p) => p.toLowerCase().includes(searchTerm))
+          .sort();
+        renderProviderDropdown(filteredProviders);
+        providerDropdown.classList.remove("hidden");
+        if (selectedProviderInput.value !== providerSearchInput.value) {
+          selectedProviderInput.value = "";
+        }
+      });
+
+      // Hide dropdown when clicking outside of the search input and dropdown list
+      document.addEventListener("click", (e) => {
+        const isClickInside =
+          providerSearchInput.contains(e.target) ||
+          providerDropdown.contains(e.target);
+        if (!isClickInside) {
+          providerDropdown.classList.add("hidden");
+        }
+      });
+
+      // Recalculate on speed or option change
+      chargingSpeedInput.addEventListener("input", calculateCheapest);
+      ignoreZeroCheckbox.addEventListener("change", calculateCheapest);
+    </script>
+  </body>
+</html>

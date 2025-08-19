@@ -1,0 +1,40 @@
+name: Update Charging Rates
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # Run daily at 02:00 UTC
+  workflow_dispatch: # Allow manual trigger too
+
+jobs:
+  update-rates:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas openpyxl
+
+      - name: Download latest Excel
+        run: |
+          curl -L -o rates.xlsx "https://ev.or.kr/nportal/evcarInfo/selectChrgeFeeStatusExcel.do"
+
+      - name: Parse and generate JSON
+        run: |
+          python scripts/parse_rates.py rates.xlsx charging_rates.json
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add charging_rates.json
+          git commit -m "chore: update charging rates ($(date +'%Y-%m-%d'))" || echo "No changes to commit"
+          git push
