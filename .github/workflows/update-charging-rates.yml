@@ -5,6 +5,9 @@ on:
     - cron: "0 2 * * *" # Run daily at 02:00 UTC
   workflow_dispatch: # Allow manual trigger too
 
+permissions:
+  contents: write # Allow the workflow to push changes to the repository
+
 jobs:
   update-rates:
     runs-on: ubuntu-latest
@@ -34,9 +37,7 @@ jobs:
       - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add charging_rates.json
           git commit -m "chore: update charging rates ($(date +'%Y-%m-%d'))" || echo "No changes to commit"
           git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
