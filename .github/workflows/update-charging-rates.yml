@@ -38,3 +38,5 @@ jobs:
           git add charging_rates.json
           git commit -m "chore: update charging rates ($(date +'%Y-%m-%d'))" || echo "No changes to commit"
           git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
