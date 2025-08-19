@@ -13,10 +13,12 @@ def parse_rate_text(text):
         return []
     text = str(text).replace("\n", " ")
     matches = re.findall(r"\(\s*(\d+)\s*~\s*(\d+)kW\)\s*([\d.,]+)원", text)
-    return [
+    rates = [
         {"min_kW": int(mn), "max_kW": int(mx), "price": float(price.replace(",", ""))}
         for mn, mx, price in matches
     ]
+    rates.sort(key=lambda item: item["min_kW"])
+    return rates
 
 
 df = pd.read_excel(in_path)
@@ -31,4 +33,4 @@ for _, row in df.iterrows():
             charging_rates[operator][provider] = parsed
 
 with open(out_path, "w", encoding="utf-8") as f:
-    json.dump(charging_rates, f, ensure_ascii=False, separators=(",", ":"))
+    json.dump(charging_rates, f, ensure_ascii=False, sort_keys=True, separators=( ",", ":"))
