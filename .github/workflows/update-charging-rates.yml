@@ -1,6 +1,13 @@
 name: Update Charging Rates
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/update-charging-rates.yml
+      - scripts/parse_rates.py
+      - tests/**
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch:
@@ -26,18 +33,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas openpyxl
 
-      - name: Download latest Excel
+      - name: Test parser
         run: |
-          curl -L -o rates.xlsx "https://ev.or.kr/nportal/evcarInfo/selectChrgeFeeStatusExcel.do"
+          python -m unittest discover -s tests -v
+
+      - name: Download latest Excel files
+        run: |
+          mkdir -p rates
+          for stage in s1 s2 s3 s4 s5; do
+            curl --fail --location --silent --show-error \
+              --retry 3 --connect-timeout 10 --max-time 60 \
+              --data "excelDown=Y&stage=${stage}" \
+              --output "rates/${stage}.xlsx" \
+              "https://ev.or.kr/nportal/evcarInfo/selectEvRoamFeeExcel.do"
+          done
 
       - name: Parse and generate JSON
         run: |
-          python scripts/parse_rates.py rates.xlsx charging_rates.json
+          python scripts/parse_rates.py rates charging_rates.json
 
       - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add charging_rates.json
-          git commit -m "chore: update charging rates ($(date +'%Y-%m-%d'))" || echo "No changes to commit"
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "chore: update charging rates ($(date +'%Y-%m-%d'))"
           git push
