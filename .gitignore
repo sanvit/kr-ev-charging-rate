@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+# Local download and output folders from the README commands
+rates/
+operator-fees/
+downloads/
+out/
+stations.xlsx

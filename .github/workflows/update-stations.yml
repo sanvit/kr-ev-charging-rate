@@ -1,0 +1,105 @@
+name: Update Station Data
+
+# Station files are large and change every day, so they are published as a
+# single orphan commit on the `data` branch instead of growing main's history.
+# Read them from https://raw.githubusercontent.com/<owner>/<repo>/data/stations/...
+
+on:
+  schedule:
+    # 03:17 KST daily
+    - cron: "17 18 * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/update-stations.yml
+      - scripts/parse_station_fees.py
+      - scripts/sync_keco_stations.py
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-stations
+  cancel-in-progress: false
+
+env:
+  DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+
+jobs:
+  update-stations:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas openpyxl xlrd
+
+      - name: Test parsers
+        run: python -m unittest discover -s tests -v
+
+      - name: Restore the published data branch
+        id: previous
+        run: |
+          mkdir -p out
+          if git fetch --depth=1 origin data; then
+            git archive FETCH_HEAD | tar -x -C out
+            echo "tree=$(git rev-parse 'FETCH_HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          else
+            echo "No data branch yet"
+          fi
+
+      - name: Download station and operator fee exports
+        run: |
+          mkdir -p downloads/operator-fees
+          for kind in M:member N:non_member; do
+            curl --fail --location --silent --show-error \
+              --retry 3 --connect-timeout 10 --max-time 60 \
+              --data "excelDown=Y&feeGb=${kind%%:*}&speeds=s1,s2,s3,s4,s5" \
+              --output "downloads/operator-fees/${kind#*:}.xlsx" \
+              "https://ev.or.kr/nportal/evcarInfo/selectEvBusiFeeExcel.do"
+          done
+          curl --fail --location --silent --show-error \
+            --retry 3 --connect-timeout 10 --max-time 300 \
+            --data "excelDown=Y&feeGb=M&speeds=s1,s2,s3,s4,s5" \
+            --output downloads/stations.xlsx \
+            "https://ev.or.kr/nportal/evcarInfo/selectEvStationFeeExcel.do"
+
+      - name: Build station directory
+        run: |
+          python -m scripts.parse_operator_fees downloads/operator-fees downloads/operator_rates.json
+          python -m scripts.parse_station_fees downloads/stations.xlsx downloads/operator_rates.json out/stations/directory.json
+
+      - name: Sync station coordinates from data.go.kr
+        if: env.DATA_GO_KR_SERVICE_KEY != ''
+        # A failed or blocked sync keeps yesterday's map.json and still publishes the directory.
+        continue-on-error: true
+        run: python -m scripts.sync_keco_stations out/stations/map.json
+
+      - name: Publish to the data branch
+        env:
+          PREVIOUS_TREE: ${{ steps.previous.outputs.tree }}
+        run: |
+          cp data/DATA_BRANCH_README.md out/README.md
+          cd out
+          git init -q -b data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config http.https://github.com/.extraheader "$(git -C .. config --get http.https://github.com/.extraheader)"
+          git add -A
+          git commit -q -m "data: update stations ($(date -u +'%Y-%m-%d'))"
+          if [ "$(git rev-parse 'HEAD^{tree}')" = "$PREVIOUS_TREE" ]; then
+            echo "No changes to publish"
+            exit 0
+          fi
+          git push --force "https://github.com/${GITHUB_REPOSITORY}.git" HEAD:data
